@@ -6,6 +6,10 @@
   <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+  <!-- Network-bearing type so a backgrounded call's own sockets (e.g. a WebRTC
+       signalling WebSocket) survive Doze/background reaping. phoneCall alone does
+       not carry this exemption. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
   <application>
     <activity
@@ -29,5 +33,10 @@
         <action android:name="com.google.firebase.MESSAGING_EVENT" />
       </intent-filter>
     </service>
+
+    <service
+      android:name="expo.modules.callkittelecom.services.CallForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="phoneCall|dataSync" />
   </application>
 </manifest>

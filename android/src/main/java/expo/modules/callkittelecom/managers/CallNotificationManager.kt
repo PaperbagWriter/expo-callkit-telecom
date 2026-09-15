@@ -15,6 +15,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.graphics.drawable.IconCompat
 import expo.modules.callkittelecom.IncomingCallActivity
+import expo.modules.callkittelecom.services.CallForegroundService
 import expo.modules.callkittelecom.services.CallNotificationReceiver
 import expo.modules.callkittelecom.utils.CallKitTelecomLog
 import java.util.UUID
@@ -310,6 +311,12 @@ object CallNotificationManager {
                 .build()
 
         postNotification(ctx, callId, displayName, "ongoing call")
+        // Run the ongoing-call notification as a foreground service carrying a
+        // network-bearing type, so a backgrounded call's socket (e.g. the app's
+        // WebRTC signalling WebSocket) survives Doze/background reaping. Reuses
+        // NOTIFICATION_ID so there is a single notification. `start()` falls back
+        // gracefully if the OS refuses the foreground start.
+        CallForegroundService.start(ctx, notification)
         notify(ctx, notification)
     }
 
@@ -318,6 +325,10 @@ object CallNotificationManager {
         cancelDelayedCancel()
         val ctx = context.applicationContext
         val displayName = callerName ?: "Unknown"
+
+        // The call is over: release the network-bearing foreground service. The
+        // "Call ended" notification below is posted independently and auto-cancels.
+        CallForegroundService.stop(ctx)
 
         val notification =
             buildBase(ctx, CHANNEL_ONGOING, displayName, "Call ended")
@@ -338,6 +349,10 @@ object CallNotificationManager {
     /** Cancels any active call notification. */
     fun cancel(context: Context) {
         cancelDelayedCancel()
+        // Release the foreground service before removing its notification, so a
+        // hard cancel (e.g. an answer-timeout drop) doesn't leave the service
+        // running against a notification that no longer exists.
+        CallForegroundService.stop(context.applicationContext)
         NotificationManagerCompat.from(context.applicationContext).cancel(NOTIFICATION_ID)
         CallKitTelecomLog.d(TAG) { "Cancelled call notification" }
     }
