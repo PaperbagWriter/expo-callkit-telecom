@@ -7,7 +7,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import expo.modules.callkittelecom.utils.CallKitTelecomLog
+import android.util.Log
 
 /**
  * Keeps a live call's process AND network alive while the app is backgrounded.
@@ -32,12 +32,28 @@ class CallForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = pendingNotification
+        // A service started via startForegroundService MUST call startForeground()
+        // within a few seconds or the OS raises a timeout and kills it (which, on a
+        // call, drops the call). So ALWAYS call startForeground — never take an
+        // early-return path that skips it. The notification rides in the Intent (a
+        // Notification is Parcelable), which is reliable across the
+        // startForegroundService -> onStartCommand boundary, unlike a static field.
+        val notification: Notification? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent?.getParcelableExtra(EXTRA_NOTIFICATION, Notification::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent?.getParcelableExtra(EXTRA_NOTIFICATION)
+            }
+
         if (notification == null) {
-            // Nothing to show — never leave a bare foreground service running.
+            // Should not happen (start() always packs it), but we still cannot
+            // leave a foreground-started service without a startForeground call.
+            Log.w(TAG, "onStartCommand with no notification — stopping")
             stopSelf()
             return START_NOT_STICKY
         }
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIFICATION_ID, notification, foregroundTypes())
@@ -45,15 +61,12 @@ class CallForegroundService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            CallKitTelecomLog.e(TAG) { "startForeground failed: ${e.message}" }
+            // Log at ERROR unconditionally: a failure here is the difference between
+            // a call surviving the background and dropping, and it's otherwise silent.
+            Log.e(TAG, "startForeground failed", e)
             stopSelf()
         }
         return START_NOT_STICKY
-    }
-
-    override fun onDestroy() {
-        pendingNotification = null
-        super.onDestroy()
     }
 
     private fun foregroundTypes(): Int {
@@ -66,25 +79,26 @@ class CallForegroundService : Service() {
 
     companion object {
         private const val TAG = "CallForegroundService"
+        private const val EXTRA_NOTIFICATION = "notification"
 
         // Must match CallNotificationManager.NOTIFICATION_ID so the FGS adopts the
         // existing ongoing-call notification (one notification, not two).
         private const val NOTIFICATION_ID = 8400
 
-        // startForegroundService only carries an Intent, so the built Notification
-        // is handed over here rather than parcelled.
-        @Volatile
-        private var pendingNotification: Notification? = null
-
         /**
          * Promote the ongoing-call notification to a foreground service. Idempotent:
-         * calling it again while running updates the held notification and re-issues
-         * startForegroundService, which the OS treats as a notification update.
+         * calling it again while running re-delivers with the current notification,
+         * which the OS treats as a notification update.
+         *
+         * Start this as EARLY as the call is live and the app is still foreground —
+         * a foreground start has no background-start restrictions, and once running
+         * the FGS survives the subsequent backgrounding.
          */
         fun start(context: Context, notification: Notification) {
-            pendingNotification = notification
             val ctx = context.applicationContext
-            val intent = Intent(ctx, CallForegroundService::class.java)
+            val intent =
+                Intent(ctx, CallForegroundService::class.java)
+                    .putExtra(EXTRA_NOTIFICATION, notification)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     ctx.startForegroundService(intent)
@@ -92,22 +106,21 @@ class CallForegroundService : Service() {
                     ctx.startService(intent)
                 }
             } catch (e: Exception) {
-                // A background-start restriction (no active call context yet) — the
-                // notification itself is still posted by CallNotificationManager, so
-                // the call is not invisible; it just lacks the network exemption.
-                CallKitTelecomLog.e(TAG) { "startForegroundService failed: ${e.message}" }
-                pendingNotification = null
+                // A background-start restriction (e.g. started too late, already in
+                // the background) — the notification itself is still posted by
+                // CallNotificationManager, so the call is not invisible; it just
+                // lacks the network exemption.
+                Log.e(TAG, "startForegroundService failed", e)
             }
         }
 
         /** Stop the foreground service; the notification's own lifecycle is unchanged. */
         fun stop(context: Context) {
-            pendingNotification = null
             val ctx = context.applicationContext
             try {
                 ctx.stopService(Intent(ctx, CallForegroundService::class.java))
             } catch (e: Exception) {
-                CallKitTelecomLog.e(TAG) { "stopService failed: ${e.message}" }
+                Log.e(TAG, "stopService failed", e)
             }
         }
     }

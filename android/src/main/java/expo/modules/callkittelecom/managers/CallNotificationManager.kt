@@ -268,6 +268,11 @@ object CallNotificationManager {
                 .build()
 
         postNotification(ctx, callId, displayName, "dialing call")
+        // Start the network-bearing foreground service at the EARLIEST call point,
+        // while the app is still foreground (a foreground start has no
+        // background-start restriction). Once running it survives backgrounding, so
+        // the call's socket is protected before the user can background the app.
+        CallForegroundService.start(ctx, notification)
         notify(ctx, notification)
     }
 
