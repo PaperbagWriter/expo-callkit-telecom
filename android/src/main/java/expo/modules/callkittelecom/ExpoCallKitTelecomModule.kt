@@ -96,6 +96,17 @@ class ExpoCallKitTelecomModule : Module() {
 
         OnNewIntent { intent -> handleAnswerIntent(intent) }
 
+        // When a push-wake integration pre-initializes this module from a headless
+        // JS task, OnCreate has already run by the time the user taps the
+        // notification's Answer action — so its handleLaunchIntent() saw no answer
+        // intent. The tap then launches MainActivity fresh, so OnNewIntent does not
+        // fire either (the intent arrives as the launch intent, not a re-delivered
+        // one). The ACTION_ANSWER intent would fall between both hooks and the call
+        // would time out "unanswered". Re-check the launch intent whenever the
+        // activity enters the foreground; handleAnswerIntent clears the action
+        // after handling it, so this is idempotent.
+        OnActivityEntersForeground { handleLaunchIntent() }
+
         // Register per-event observers
         OnStartObserving(CallEvents.CALL_SESSION_ADDED) {
             CallEventEmitter.startObserving(CallEvents.CALL_SESSION_ADDED)
