@@ -72,7 +72,14 @@ class CallForegroundService : Service() {
     private fun foregroundTypes(): Int {
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            // dataSync keeps the socket alive; microphone is what lets the call keep
+            // RECORDING while backgrounded (Android 14+ blocks background mic capture
+            // without it). Starting the microphone FGS from the background is
+            // disallowed, but we start this service at call-start in the foreground,
+            // so the restriction does not apply.
+            types = types or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         }
         return types
     }

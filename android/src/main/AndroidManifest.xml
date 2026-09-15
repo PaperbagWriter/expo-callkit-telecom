@@ -10,6 +10,9 @@
        signalling WebSocket) survive Doze/background reaping. phoneCall alone does
        not carry this exemption. -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <!-- Lets the call keep RECORDING (mic) while backgrounded — Android 14+ blocks
+       background mic capture without a microphone-type foreground service. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
   <application>
     <activity
@@ -37,6 +40,6 @@
     <service
       android:name="expo.modules.callkittelecom.services.CallForegroundService"
       android:exported="false"
-      android:foregroundServiceType="phoneCall|dataSync" />
+      android:foregroundServiceType="phoneCall|dataSync|microphone" />
   </application>
 </manifest>
